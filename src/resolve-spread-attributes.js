@@ -22,7 +22,7 @@ const reservedKeys = [
 export default attrs => {
   const result = Object.create(null);
   for (const key of Object.keys(attrs)) {
-    if (reservedKeys[key]) {
+    if (reservedKeys[key] || key[0] === "$") {
       if (key === "attrs") {
         if (result[key]) {
           result[key] = { ...result[key], ...attrs[key] };
