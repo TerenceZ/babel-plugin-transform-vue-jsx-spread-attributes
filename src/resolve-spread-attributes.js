@@ -1,3 +1,17 @@
+const rootAttributes = [
+  "staticClass",
+  "class",
+  "style",
+  "key",
+  "ref",
+  "refInFor",
+  "slot",
+  "scopedSlots",
+  "model"
+];
+const prefixes = ["props", "domProps", "on", "nativeOn", "hook", "attrs"];
+const prefixRegexp = new RegExp(`(^${prefixes.join("|^")})`);
+
 const reservedKeys = [
   "staticClass",
   "class",
@@ -7,17 +21,13 @@ const reservedKeys = [
   "refInFor",
   "slot",
   "scopedSlots",
-  "model",
-  "props",
-  "domProps",
-  "on",
-  "nativeOn",
-  "hook",
-  "attrs"
-].reduce((map, key) => {
-  map[key] = true;
-  return map;
-}, {});
+  "model"
+]
+  .concat(prefixes)
+  .reduce((map, key) => {
+    map[key] = true;
+    return map;
+  }, {});
 
 export default attrs => {
   const result = Object.create(null);
@@ -32,10 +42,20 @@ export default attrs => {
       } else {
         result[key] = attrs[key];
       }
-    } else if (result["attrs"]) {
-      result["attrs"][key] = attrs[key];
     } else {
-      result["attrs"] = { [key]: attrs[key] };
+      const prefix = prefixRegexp.exec(key);
+      let category = "attrs";
+      let name = key;
+      if (prefix) {
+        category = prefix[1];
+        name =
+          key[category.length].toLowerCase() + key.substr(category.length + 1);
+      }
+      if (result[category]) {
+        result[category][name] = attrs[key];
+      } else {
+        result[category] = { [name]: attrs[key] };
+      }
     }
   }
 
