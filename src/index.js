@@ -3,164 +3,127 @@
 const { addDefault } = require("@babel/helper-module-imports");
 const { default: syntaxJsx } = require("@babel/plugin-syntax-jsx");
 const { resolve: resolvePath } = require("path");
-
-const reservedAttributes = [
-  "staticClass",
-  "class",
-  "style",
-  "key",
-  "ref",
-  "refInFor",
-  "slot",
-  "scopedSlots",
-  "model",
-  "props",
-  "domProps",
-  "on",
-  "nativeOn",
-  "hook",
-  "attrs"
-];
+const { reserved: reservedAttributes } = require("./constants");
 
 module.exports = babel => {
   const t = babel.types;
+  let helper;
 
   return {
     name: "babel-plugin-transform-vue-jsx-spread-attributes",
     inherits: syntaxJsx,
     visitor: {
-      Program(path) {
-        path.traverse({
-          JSXSpreadAttribute(path) {
-            // If the argument is object expression,
-            // we can handle it in place.
-            if (path.get("argument").isObjectExpression()) {
-              transformJSXSpreadAttributesInOjbectExpression(path);
-            } else {
-              const helper = addDefault(
-                path,
-                resolvePath(__dirname, "./resolve-spread-attributes.js"),
-                {
-                  nameHint: "_mergeJSXAttributes"
-                }
-              );
-              path
-                .get("argument")
-                .replaceWith(t.callExpression(helper, [path.node.argument]));
-            }
+      Program(programPath) {
+        programPath.traverse({
+          JSXOpeningElement(element) {
+            element.get("attributes").forEach(path => {
+              if (!path.isJSXSpreadAttribute()) {
+                return;
+              }
+              if (path.get("argument").isObjectExpression()) {
+                transformJSXSpreadAttributesInOjbectExpression(path);
+              } else {
+                path
+                  .get("argument")
+                  .replaceWith(
+                    t.callExpression(addHelper(), [path.node.argument])
+                  );
+              }
+            });
           }
         });
+
+        function addHelper() {
+          return (
+            helper ||
+            (helper = addDefault(
+              programPath,
+              resolvePath(__dirname, "./resolve-spread-attributes.js"),
+              {
+                nameHint: "_mergeJSXAttributes"
+              }
+            ))
+          );
+        }
+
+        function transformJSXSpreadAttributesInOjbectExpression(path) {
+          const attributes = [];
+          const lastAttribute = () => attributes[attributes.length - 1];
+          const addSpreadAttribute = node => {
+            if (lastAttribute() && t.isJSXSpreadAttribute(lastAttribute())) {
+              lastAttribute().argument.properties.push(node);
+            } else {
+              attributes.push(t.jsxSpreadAttribute(t.objectExpression([node])));
+            }
+          };
+
+          path.get("argument.properties").forEach(p => {
+            if (p.isSpreadElement()) {
+              addSpreadAttribute(
+                t.spreadElement(
+                  t.callExpression(addHelper(), [p.node.argument])
+                )
+              );
+              return;
+            }
+            const name = p.get("key").isIdentifier()
+              ? p.node.key.name
+              : p.node.key.value;
+
+            if (p.node.computed || /[^a-zA-Z0-9$_\-]/.test(name)) {
+              addSpreadAttribute(
+                t.spreadElement(
+                  t.callExpression(addHelper(), t.objectExpression([p.node]))
+                )
+              );
+              return;
+            }
+
+            if (name.startsWith("$") || reservedAttributes.indexOf(name) >= 0) {
+              addSpreadAttribute(p.node);
+              return;
+            }
+
+            if (p.isObjectMethod()) {
+              if (p.kind !== "method" || p.decorators) {
+                addSpreadAttribute(
+                  t.spreadElement(
+                    t.callExpression(addHelper(), t.objectExpression([p.node]))
+                  )
+                );
+              } else {
+                attributes.push(
+                  t.jsxAttribute(
+                    t.jsxIdentifier(name),
+                    t.jsxExpressionContainer(
+                      t.functionExpression(
+                        p.node.key,
+                        p.node.params,
+                        p.node.body,
+                        p.node.generator,
+                        p.node.async
+                      )
+                    )
+                  )
+                );
+              }
+              return;
+            }
+            attributes.push(
+              t.jsxAttribute(
+                t.jsxIdentifier(name),
+                t.jsxExpressionContainer(p.node.value)
+              )
+            );
+          });
+
+          attributes.forEach(attrib => {
+            path.insertBefore(attrib);
+          });
+
+          path.remove();
+        }
       }
     }
   };
-
-  function transformJSXSpreadAttributesInOjbectExpression(path) {
-    const propPaths = path.get("argument.properties");
-    const newProps = [];
-    const propPathsToMergeInAttrs = [];
-    let cursor = 0;
-    let attrCursor = -1;
-    let attrs;
-
-    // filter out attrs to be merged.
-    for (const propPath of propPaths) {
-      if (propPath.node.computed || propPath.node.key.name.startsWith("$")) {
-        newProps.push(propPath.node);
-      } else if (reservedAttributes.indexOf(propPath.node.key.name) !== -1) {
-        if (propPath.node.key.name === "attrs") {
-          attrCursor = cursor;
-          attrs = propPath.node;
-        }
-        newProps.push(propPath.node);
-      } else {
-        propPathsToMergeInAttrs.push({
-          cursor,
-          path: propPath
-        });
-      }
-
-      ++cursor;
-    }
-
-    if (!propPathsToMergeInAttrs.length) {
-      return;
-    }
-
-    const insertIntoAttrsIfOK = path => {
-      if (attrs) {
-        if (t.isObjectExpression(attrs.value)) {
-          if (
-            attrs.value.properties.some(
-              p =>
-                p.computed === path.node.computed &&
-                p.key.name === path.node.key.name
-            )
-          ) {
-            return false;
-          }
-          attrs.value.properties.push(path.node);
-          return true;
-        } else {
-          return false;
-        }
-      }
-
-      attrs = t.objectProperty(
-        t.identifier("attrs"),
-        t.objectExpression([path.node])
-      );
-      newProps.push(attrs);
-      return true;
-    };
-
-    // filter out to be spread before attrs
-    const attrsBefore = [];
-    propPathsToMergeInAttrs
-      .filter(({ cursor }) => cursor < attrCursor)
-      .forEach(({ path }) => {
-        if (!insertIntoAttrsIfOK(path)) {
-          attrsBefore.push(path.node);
-        }
-      });
-
-    // filter out to be spread after attrs
-    const attrsAfter = [];
-    propPathsToMergeInAttrs
-      .filter(({ cursor }) => cursor > attrCursor)
-      .forEach(({ path }) => {
-        if (!insertIntoAttrsIfOK(path)) {
-          attrsAfter.push(path.node);
-        }
-      });
-
-    if (attrsBefore.length || attrsAfter.length) {
-      if (!attrs) {
-        attrs = t.objectProperty(t.identifier("attrs"), t.objectExpression([]));
-        newProps.push(attrs);
-      }
-    }
-    let attrsValue = attrs.value;
-
-    if (attrsBefore.length) {
-      attrsValue = t.objectExpression(
-        attrsBefore.concat([t.spreadElement(attrsValue)])
-      );
-    }
-
-    if (attrsAfter.length) {
-      if (attrsBefore.length) {
-        attrsValue.properties.push(
-          t.spreadElement(t.objectExpression(attrsAfter))
-        );
-      } else {
-        attrsValue = t.objectExpression([
-          t.spreadElement(attrsValue),
-          t.spreadElement(t.objectExpression(attrsAfter))
-        ]);
-      }
-    }
-
-    attrs.value = attrsValue;
-    path.node.argument.properties = newProps;
-  }
 };

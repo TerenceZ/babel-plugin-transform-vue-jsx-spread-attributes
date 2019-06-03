@@ -9,10 +9,12 @@ function _objectSpread(target) { for (var i = 1; i < arguments.length; i++) { va
 
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
 
-var rootAttributes = ["staticClass", "class", "style", "key", "ref", "refInFor", "slot", "scopedSlots", "model"];
-var prefixes = ["props", "domProps", "on", "nativeOn", "hook", "attrs"];
+var _require = require("./constants"),
+    rootAttributes = _require.root,
+    prefixes = _require.prefixes;
+
 var prefixRegexp = new RegExp("(^".concat(prefixes.join("|^"), ")"));
-var reservedKeys = ["staticClass", "class", "style", "key", "ref", "refInFor", "slot", "scopedSlots", "model"].concat(prefixes).reduce(function (map, key) {
+var reservedKeys = rootAttributes.concat(prefixes).reduce(function (map, key) {
   map[key] = true;
   return map;
 }, {});
@@ -25,11 +27,7 @@ var _default = function _default(attrs) {
 
     if (reservedKeys[key] || key[0] === "$") {
       if (key === "attrs") {
-        if (result[key]) {
-          result[key] = _objectSpread({}, result[key], attrs[key]);
-        } else {
-          result[key] = _objectSpread({}, attrs[key]);
-        }
+        result[key] = _objectSpread({}, result[key], attrs[key]);
       } else {
         result[key] = attrs[key];
       }

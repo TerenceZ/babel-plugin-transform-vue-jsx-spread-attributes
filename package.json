@@ -1,10 +1,10 @@
 {
   "name": "babel-plugin-transform-vue-jsx-spread-attributes",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Resolve unknown attributes to 'attrs' in vnode options.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "babel src/index.js src/resolve-spread-attributes.js -d dist"
+    "build": "babel src/constants.js src/index.js src/resolve-spread-attributes.js -d dist"
   },
   "repository": {
     "type": "git",
