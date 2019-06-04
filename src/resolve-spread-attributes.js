@@ -6,6 +6,10 @@ const reservedKeys = rootAttributes.concat(prefixes).reduce((map, key) => {
   return map;
 }, {});
 
+const isDirective = src =>
+  src.startsWith(`v-`) ||
+  (src.startsWith("v") && src.length >= 2 && src[1] >= "A" && src[1] <= "Z");
+
 export default attrs => {
   const result = Object.create(null);
   for (const key of Object.keys(attrs)) {
@@ -16,12 +20,21 @@ export default attrs => {
         result[key] = attrs[key];
       }
     } else {
-      const prefix = prefixRegexp.exec(key);
+      let prefix = prefixRegexp.exec(key);
       let category = "attrs";
       let name = key;
+      let offset = 0;
+
       if (prefix) {
         category = prefix[1];
-        const offset = category.length;
+        offset = category.length;
+      } else if (isDirective(key)) {
+        prefix = "v";
+        category = "directives";
+        offset = 1;
+      }
+
+      if (prefix) {
         name =
           key[offset] === "-"
             ? key.substr(offset + 1)
